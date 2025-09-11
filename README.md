@@ -1,57 +1,168 @@
-# docker-volume-zfs-plugin
-Docker volume plugin for creating persistent volumes as a dedicated zfs dataset.
+# Docker ZFS Volume Plugin
+
+A Docker volume plugin for creating persistent volumes as dedicated ZFS
+datasets. This plugin is designed to be simple, robust, and easy to
+configure.
 
 ## Installation
-```
-$ mkdir /mnt/icefo-docker-zfs-volumes
-$ zfs create -o compression=on -o mountpoint=/mnt/icefo-docker-zfs-volumes dataset/name
-# Compression is not mandatory but almost free in compute and can make you save a lot of space
-# dataset/name will be the default parent dataset for the volumes
-$ cd in source folder
-$ make && make enable
+
+Installation depends on your operating system. Both NixOS (declarative)
+and systemd-based systems like Ubuntu (manual) are supported.
+
+### Prerequisites
+
+Before you begin, you must create a parent ZFS dataset that the plugin
+will use to store volumes.
+
+``` bash
+# 1. Choose a path for your volume data, e.g., /docker
+sudo mkdir -p /docker/volumes
+
+# 2. Create the parent ZFS dataset. 
+#    Its mountpoint should match the path you chose above.
+sudo zfs create -o compression=on -o mountpoint=/docker <your-pool>/docker
 ```
 
+Note: Compression is not mandatory but is recommended as it's
+computationally cheap and can save a significant amount of space.
+
+### Method 1: NixOS
+
+Add the docker-zfs.nix module to your system configuration and enable
+the service.
+
+``` nix
+# /etc/nixos/configuration.nix
+services.dockerZfsPlugin = {
+  enable = true;
+  volumeBasePath = "/docker";      # Must match the mountpoint from prerequisites
+  rootDataset = "<your-pool>/docker"; # The parent dataset you created
+};
+```
+
+Then, rebuild your system:
+
+``` bash
+sudo nixos-rebuild switch
+```
+
+### Method 2: Ubuntu / systemd-based systems
+
+Compile the binary:
+
+``` bash
+# From the source code directory
+go build -o docker-zfs-plugin .
+```
+
+Install the binary:
+
+``` bash
+sudo install docker-zfs-plugin /usr/local/bin/
+```
+
+------------------------------------------------------------------------
+
+## Step 3: 🔧 Create the systemd Service
+
+Create the `/etc/systemd/system/docker-zfs-plugin.service` file and
+paste the following content:
+
+``` ini
+[Unit]
+Description=Docker ZFS Volume Plugin
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+Restart=on-failure
+ExecStart=/usr/local/bin/docker-zfs-plugin --root-dataset=rpool/docker --volume-base=/docker
+DeviceAllow=/dev/zfs rw
+
+[Install]
+WantedBy=multi-user.target
+```
+
+------------------------------------------------------------------------
+
+## Step 4: ▶️ Enable the Service
+
+Reload systemd, enable the service, and start it:
+
+``` bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now docker-zfs-plugin.service
+sudo systemctl status docker-zfs-plugin.service
+```
+
+------------------------------------------------------------------------
 
 ## Usage
-> Note that created volumes will always have a mountpoint under `/mnt/icefo-docker-zfs-volumes/volumes/`
 
-```
-$ docker volume create -d icefo/docker-volume-zfs-plugin:2.2 testVolume
+Note: The driver name for this plugin is `docker-zfs-plugin`. Created
+volumes will have a mountpoint under the path you defined in
+`volumeBasePath` (e.g., `/docker/volumes/<volume_name>`).
+
+### 1. Create a simple volume:
+
+``` bash
+$ docker volume create -d docker-zfs-plugin testVolume
 testVolume
+
 $ docker volume ls
-DRIVER                               VOLUME NAME
-icefo/docker-volume-zfs-plugin:2.2   asdad_db
-local                                localTestvolume
-icefo/docker-volume-zfs-plugin:2.2   testVolume
+DRIVER                VOLUME NAME
+docker-zfs-plugin     testVolume
+local                 localTestvolume
 ```
 
-ZFS attributes can be passed in as driver options in the `docker volume create` command:
-```
-$ docker volume create -d icefo/docker-volume-zfs-plugin:2.2 -o compression=on -o dedup=on testVolume
-testVolume
-```
-I don't advise to use the dedup option, but it's possible. The mountpoint option is forbidden as it's
-easier for the driver to mount everything under the same path.
+### 2. Create a volume with ZFS attributes:
 
-If you want to use a different root dataset than the default one:
-```
-$ docker volume create -d icefo/docker-volume-zfs-plugin:2.2 -o driver_zfsRootDataset="zpool-docker/test1234" testVolume23
-testVolume23
-```
-Will create the dataset `zpool-docker/test1234/testVolume23` mounted under /mnt/icefo-docker-zfs-volumes/volumes/testVolume23 
+ZFS attributes can be passed as driver options using the `-o` flag.
 
-
-### Docker compose
-The plugin can be used in docker compose similar to other volume plugins:
+``` bash
+$ docker volume create -d docker-zfs-plugin -o compression=on -o dedup=on testVolumeWithOpts
+testVolumeWithOpts
 ```
+
+⚠️ I don't advise using the `dedup` option unless you know its
+implications, but it is available.\
+The `mountpoint` option is **forbidden**, as the driver manages all
+mountpoints under a single base path.
+
+### 3. Create a volume under a different parent dataset:
+
+If you want to use a root dataset other than the one specified at
+startup, use the `driver_zfsRootDataset` option.
+
+``` bash
+$ docker volume create -d docker-zfs-plugin -o driver_zfsRootDataset="<other-pool>/test" testVolume2
+testVolume2
+```
+
+This will create the dataset `<other-pool>/test/testVolume2`, which will
+be mounted under `/docker/volumes/testVolume2`.
+
+------------------------------------------------------------------------
+
+## Docker Compose
+
+The plugin can be used in `docker-compose.yml` files similar to other
+volume plugins:
+
+``` yaml
 volumes:
-   data:
-      driver: icefo/docker-volume-zfs-plugin:2.2
-      driver_opts:
-         compression: on
+  my-data:
+    driver: docker-zfs-plugin
+    driver_opts:
+      driver_zfsAutosnapshot:hourly: "true"
+      driver_zfsAutosnapshot:daily: "true"
 ```
-Since a default root dataset must be available, the default docker-compose name can be used
 
+------------------------------------------------------------------------
 
-## Breaking API changes
-I make no guarantees about the compatibility with previous versions of this plugin
+## Breaking API Changes
+
+I make no guarantees about the compatibility with previous versions of
+this plugin.

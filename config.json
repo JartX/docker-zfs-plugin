@@ -14,7 +14,7 @@
     }
   ],
   "interface": {
-    "socket": "icefo-zfs-vol.sock",
+    "socket": "docker-zfs-vol.sock",
     "types": [
       "docker.volumedriver/1.0"
     ]
@@ -31,14 +31,14 @@
   },
   "mounts": [
     {
-      "destination": "/mnt/icefo-docker-zfs-volumes",
+      "destination": "/docker",
       "options": [
         "rbind",
         "rshared",
         "rw"
       ],
       "name": "volumes",
-      "source": "/mnt/icefo-docker-zfs-volumes",
+      "source": "/docker",
       "type": "bind"
     }
   ],

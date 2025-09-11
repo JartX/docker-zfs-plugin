@@ -1,4 +1,4 @@
-PLUGIN_NAME = icefo/docker-volume-zfs-plugin
+PLUGIN_NAME = docker-volume-zfs-plugin
 PLUGIN_TAG ?= 2.2
 
 all: clean rootfs create
