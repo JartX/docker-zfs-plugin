@@ -68,9 +68,10 @@ in
   config = lib.mkIf cfg.enable {
     systemd.services.docker-zfs-plugin = {
       description = "Docker ZFS volume plugin";
-      after = [ "docker.service" ];
-      requires = [ "docker.service" ];
-      wantedBy = [ "multi-user.target" ];
+      before = [ "docker.service" ];
+      after = [ "zfs-mount.service" ];
+      requires = [ "zfs-mount.service" ];
+      wantedBy = [ "docker.service" ];
       path = [ pkgs.zfs ];
       serviceConfig = {
         Type = "simple";
